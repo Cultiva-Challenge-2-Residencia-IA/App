@@ -1,0 +1,10 @@
+{
+  "description": "Organize sua rotina, saúde e aprendizado com check-ins, tarefas e agentes de nutrição, saúde física, bem-estar mental e estudos.",
+  "robots": {
+    "index": false
+  },
+  "accessibility": {
+    "addBypassLinks": false,
+    "ignoreReducedMotion": false
+  }
+}
