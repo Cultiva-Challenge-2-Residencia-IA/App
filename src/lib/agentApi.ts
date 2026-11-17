@@ -24,11 +24,7 @@ const agentInstructions: Record<AgentId, string> = {
 
 export async function askAgent(
   agent: AgentId,
-
-  userName: string,
-
   checkIn: CheckInRecord | undefined,
-
   history: AgentTurn[],
 ) {
   const response = await fetch("/api/agent-chat", {
@@ -38,8 +34,6 @@ export async function askAgent(
 
     body: JSON.stringify({
       agent,
-
-      userName,
 
       instruction: agentInstructions[agent],
 

@@ -47,6 +47,9 @@ export type LocalTask = {
   meta: string
   done: boolean
   createdAt: string
+  dueDate?: string
+  dueTime?: string
+  category?: string
 }
 
 export type AgentMessageRecord = {
@@ -195,6 +198,24 @@ export async function loginAccount(email: string, password: string) {
   }
 
   return account
+}
+
+export async function updateAccountName(userId: string, name: string) {
+  if (name.trim().length < 2) throw new Error("Informe um nome válido.")
+  const database = await openDatabase()
+  const account = await new Promise<UserAccount>((resolve, reject) => {
+    const request = database
+      .transaction("accounts")
+      .objectStore("accounts")
+      .get(userId)
+    request.onsuccess = () => {
+      if (request.result) resolve(request.result)
+      else reject(new Error("Conta local não encontrada."))
+    }
+    request.onerror = () => reject(request.error)
+  })
+  database.close()
+  return putRecord("accounts", { ...account, name: name.trim() })
 }
 
 export async function saveCheckIn(
@@ -355,6 +376,12 @@ export async function saveEvent(event: Omit<EventRecord, "id" | "createdAt">) {
     id: crypto.randomUUID(),
     createdAt: new Date().toISOString(),
   })
+}
+
+export async function listEvents(userId: string) {
+  return (await getAllByUser<EventRecord>("events", userId)).sort((a, b) =>
+    a.createdAt.localeCompare(b.createdAt),
+  )
 }
 
 export async function savePreference(

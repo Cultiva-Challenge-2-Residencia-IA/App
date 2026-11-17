@@ -6,9 +6,15 @@ import {
   useRef,
   useState,
 } from "react"
+
 import { AgentToolkit } from "./AgentToolkit"
+
 import { askAgent } from "./lib/agentApi"
-import { validateCheckIn } from "./lib/validation"
+
+import { detectRiskSignal, validateCheckIn } from "./lib/validation"
+
+import { projectEvent, sumWater } from "./lib/eventProjection"
+
 import {
   getLatestCheckIn,
   getPreferences,
@@ -18,6 +24,7 @@ import {
   deleteAllUserData,
   listAgentMessages,
   listAgentNotes,
+  listEvents,
   loginAccount,
   registerAccount,
   saveCheckIn,
@@ -27,26 +34,66 @@ import {
   saveEvent,
   saveTask,
   listTasks,
+  updateAccountName,
   type LocalTask,
   type CheckInRecord,
 } from "./lib/localDb"
 
-type Page = "today" | "agents" | "records" | "profile"
+type Page = "today" | "agents" | "agenda" | "records" | "profile"
+
 export type AgentId = "nutrition" | "physical" | "mental" | "study"
-type AgentTab = "chat" | "notes" | "scanner" | "settings"
+
+type AgentTab = "chat" | "toolkit" | "notes" | "scanner" | "settings"
+
+type ThemeId = "punk" | "cutie" | "gothic" | "neon"
+
+const themes: Array<{
+  id: ThemeId
+  name: string
+  description: string
+  colors: string[]
+}> = [
+  {
+    id: "punk",
+    name: "Riot garden",
+    description: "Lima, laranja e atitude de zine independente.",
+    colors: ["#111412", "#d7ed54", "#f36b3f"],
+  },
+  {
+    id: "cutie",
+    name: "Cutie cloud",
+    description: "Rosa chiclete, azul céu e detalhes de My Melody.",
+    colors: ["#fff7fb", "#ff8fb3", "#a9d8e2"],
+  },
+  {
+    id: "gothic",
+    name: "Moon ritual",
+    description: "Preto, roxo profundo e brilho de altar noturno.",
+    colors: ["#100d17", "#9d71e8", "#e7b5ff"],
+  },
+  {
+    id: "neon",
+    name: "Night arcade",
+    description: "Azul elétrico, verde ácido e energia digital.",
+    colors: ["#07131f", "#56f2c5", "#6f7bff"],
+  },
+]
 
 function usePersistentState<T>(key: string, initial: T) {
   const [value, setValue] = useState<T>(() => {
     try {
       const saved = localStorage.getItem(key)
+
       return saved ? JSON.parse(saved) as T : initial
     } catch {
       return initial
     }
   })
+
   useEffect(() => {
     localStorage.setItem(key, JSON.stringify(value))
   }, [key, value])
+
   return [value, setValue] as const
 }
 
@@ -57,135 +104,164 @@ const icons: Record<string, ReactNode> = {
       <path d="M5.5 10v10h13V10M9.5 20v-6h5v6" />
     </>
   ),
+
   spark: (
     <>
       <path d="m12 3 1.3 4.1L17 9l-3.7 1.9L12 15l-1.3-4.1L7 9l3.7-1.9L12 3Z" />
       <path d="m19 15 .7 2.3L22 18l-2.3.7L19 21l-.7-2.3L16 18l2.3-.7L19 15Z" />
     </>
   ),
+
   record: (
     <>
       <path d="M6 3h12v18H6z" />
       <path d="M9 8h6M9 12h6M9 16h4" />
     </>
   ),
+
   user: (
     <>
       <circle cx="12" cy="8" r="4" />
       <path d="M4.5 21a7.5 7.5 0 0 1 15 0" />
     </>
   ),
+
   check: <path d="m5 12 4 4L19 6" />,
+
   plus: <path d="M12 5v14M5 12h14" />,
+
   arrow: <path d="m9 18 6-6-6-6" />,
+
   leaf: (
     <>
       <path d="M5 20c6 0 13-5 14-15C9 6 4 11 5 20Z" />
       <path d="M5 20c2-5 6-8 11-11" />
     </>
   ),
+
   activity: (
     <>
       <path d="M3 12h4l2-6 4 12 2-6h6" />
       <circle cx="12" cy="12" r="9" />
     </>
   ),
+
   heart: (
     <path d="M20.8 5.6a5.5 5.5 0 0 0-7.8 0L12 6.7l-1.1-1.1a5.5 5.5 0 0 0-7.8 7.8L12 22l8.8-8.6a5.5 5.5 0 0 0 0-7.8Z" />
   ),
+
   book: (
     <>
       <path d="M4 5.5A3.5 3.5 0 0 1 7.5 2H11v17H7.5A3.5 3.5 0 0 0 4 22V5.5ZM20 5.5A3.5 3.5 0 0 0 16.5 2H13v17h3.5A3.5 3.5 0 0 1 20 22V5.5Z" />
     </>
   ),
+
   water: <path d="M12 2S5 10.1 5 15a7 7 0 0 0 14 0c0-4.9-7-13-7-13Z" />,
+
   utensils: (
     <>
       <path d="M7 3v7M4 3v5a2 2 0 0 0 2 2h2a2 2 0 0 0 2-2V3M7 10v11M17 3v18M17 3c-3 3-3 8 0 9" />
     </>
   ),
+
   clock: (
     <>
       <circle cx="12" cy="12" r="9" />
       <path d="M12 7v5l3 2" />
     </>
   ),
+
   message: <path d="M21 12a8 8 0 0 1-8 8H5l-3 2 1-5a9 9 0 1 1 18-5Z" />,
+
   note: (
     <>
       <path d="M5 3h14v18H5z" />
       <path d="M8 8h8M8 12h8M8 16h5" />
     </>
   ),
+
   scan: (
     <>
       <path d="M8 3H4a1 1 0 0 0-1 1v4M16 3h4a1 1 0 0 1 1 1v4M8 21H4a1 1 0 0 1-1-1v-4M16 21h4a1 1 0 0 0 1-1v-4" />
       <path d="M7 12h10" />
     </>
   ),
+
   settings: (
     <>
       <circle cx="12" cy="12" r="3" />
       <path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-2.8 2.8-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6v.2h-4V21a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1L4.2 17l.1-.1a1.7 1.7 0 0 0 .3-1.9A1.7 1.7 0 0 0 3 14H2.8v-4H3a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9L4.2 7 7 4.2l.1.1a1.7 1.7 0 0 0 1.9.3A1.7 1.7 0 0 0 10 3v-.2h4V3a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1L19.8 7l-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.6 1h.2v4H21a1.7 1.7 0 0 0-1.6 1Z" />
     </>
   ),
+
   send: (
     <>
       <path d="m22 2-7 20-4-9-9-4 20-7Z" />
       <path d="M22 2 11 13" />
     </>
   ),
+
   search: (
     <>
       <circle cx="11" cy="11" r="7" />
       <path d="m20 20-4-4" />
     </>
   ),
+
   trash: (
     <>
       <path d="M4 7h16M9 7V4h6v3M7 7l1 14h8l1-14M10 11v6M14 11v6" />
     </>
   ),
+
+  logout: (
+    <>
+      <path d="M10 5H5v14h5" />
+      <path d="m14 8 4 4-4 4M8 12h10" />
+    </>
+  ),
+
   edit: (
     <>
       <path d="m4 20 4.5-1 10-10-3.5-3.5-10 10L4 20Z" />
       <path d="m13.5 6.5 3.5 3.5" />
     </>
   ),
+
   camera: (
     <>
       <path d="M4 7h3l1.5-2h7L17 7h3v12H4z" />
       <circle cx="12" cy="13" r="4" />
     </>
   ),
+
   calendar: (
     <>
       <path d="M4 5h16v16H4zM8 3v4M16 3v4M4 10h16" />
     </>
   ),
+
   shield: (
     <>
       <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z" />
       <path d="m9 12 2 2 4-4" />
     </>
   ),
+
   bell: (
     <>
       <path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4" />
     </>
   ),
+
   filter: <path d="M4 5h16M7 12h10M10 19h4" />,
+
   play: <path d="m8 5 11 7-11 7V5Z" />,
+
   close: <path d="M6 6l12 12M18 6 6 18" />,
 }
 
-function Icon({
-  name,
-  size = 20,
-}: {
-  name: string
-  size?: number
-}) {
+function Icon({ name, size = 20 }: { name: string; size?: number }) {
   return (
     <svg
       width={size}
@@ -206,42 +282,70 @@ function Icon({
 const agents = {
   nutrition: {
     name: "Nutrição",
+
     icon: "leaf",
+
     color: "#4f9c76",
+
     soft: "#e9f5ee",
+
     intro: "Hábitos alimentares sem culpa e com mais consciência.",
+
     prompt: "Como posso montar um almoço mais equilibrado hoje?",
   },
+
   physical: {
     name: "Saúde física",
+
     icon: "activity",
+
     color: "#3a83a6",
+
     soft: "#e7f3f8",
+
     intro: "Movimento, exercícios e cuidado com o seu corpo.",
+
     prompt: "Quero uma sequência rápida para alongar as costas.",
   },
+
   mental: {
     name: "Saúde mental",
+
     icon: "heart",
+
     color: "#8175b7",
+
     soft: "#f0edfa",
+
     intro: "Espaço de reflexão, pausas e autoconhecimento.",
+
     prompt: "Estou com a mente acelerada. Pode me guiar em uma pausa?",
   },
+
   study: {
     name: "Estudos",
+
     icon: "book",
+
     color: "#c47a57",
+
     soft: "#fbefe9",
+
     intro: "Aprendizado guiado, revisões e constância.",
+
     prompt: "Quero revisar fotossíntese com flashcards.",
   },
 } satisfies Record<AgentId, {
   name: string
+
   icon: string
+
   color: string
+
   soft: string
+
   intro: string
+
   prompt: string
 }>
 
@@ -258,17 +362,27 @@ function Logo({ compact = false }: { compact?: boolean }) {
 
 function Button({
   children,
+
   variant = "primary",
+
   onClick,
+
   type = "button",
+
   disabled = false,
+
   className = "",
 }: {
   children: ReactNode
+
   variant?: "primary" | "secondary" | "ghost"
+
   onClick?: () => void
+
   type?: "button" | "submit"
+
   disabled?: boolean
+
   className?: string
 }) {
   return (
@@ -289,11 +403,17 @@ function Onboarding({
   onFinish: (name: string, email?: string, password?: string) => void
 }) {
   const [step, setStep] = useState(0)
+
   const [name, setName] = useState("")
+
   const [email, setEmail] = useState("")
+
   const [password, setPassword] = useState("")
+
   const [consent, setConsent] = useState(false)
+
   const next = () => setStep((s) => Math.min(3, s + 1))
+
   return (
     <main className="onboarding">
       <section className="onboard-visual">
@@ -364,6 +484,7 @@ function Onboarding({
             className="step-panel"
             onSubmit={(e) => {
               e.preventDefault()
+
               next()
             }}
           >
@@ -435,7 +556,7 @@ function Onboarding({
                 <strong>Seus dados são seus</strong>
                 <p>
                   Usamos suas informações apenas para personalizar sua
-                  experiência neste protótipo.
+                  experiência neste dispositivo.
                 </p>
               </div>
             </div>
@@ -498,11 +619,7 @@ function Onboarding({
             </div>
             <Button
               onClick={() =>
-                onFinish(
-                  name.trim(),
-                  email || undefined,
-                  password || undefined,
-                )
+                onFinish(name.trim(), email || undefined, password || undefined)
               }
             >
               Ir para minha Home <Icon name="arrow" size={17} />
@@ -516,23 +633,35 @@ function Onboarding({
 
 function Navigation({
   page,
+
   setPage,
+
   name,
 }: {
   page: Page
+
   setPage: (p: Page) => void
+
   name: string
 }) {
   const items: Array<{
     id: Page
+
     label: string
+
     icon: string
   }> = [
     { id: "today", label: "Hoje", icon: "home" },
+
     { id: "agents", label: "Agentes", icon: "spark" },
+
+    { id: "agenda", label: "Agenda", icon: "calendar" },
+
     { id: "records", label: "Registros", icon: "record" },
+
     { id: "profile", label: "Perfil", icon: "user" },
   ]
+
   return (
     <>
       <aside className="sidebar">
@@ -586,14 +715,9 @@ function Navigation({
   )
 }
 
-function Header({
-  title,
-  subtitle,
-}: {
-  title: string
-  subtitle?: string
-}) {
+function Header({ title, subtitle }: { title: string; subtitle?: string }) {
   const [notificationsOpen, setNotificationsOpen] = useState(false)
+
   return (
     <header className="topbar">
       <div>
@@ -623,11 +747,15 @@ function Header({
 
 function Modal({
   children,
+
   onClose,
+
   title,
 }: {
   children: ReactNode
+
   onClose: () => void
+
   title: string
 }) {
   return (
@@ -653,26 +781,42 @@ function Modal({
 
 function CheckIn({
   onClose,
+
   onComplete,
+
   userId,
 }: {
   onClose: () => void
+
   onComplete: (record: Omit<CheckInRecord, "id" | "createdAt">) => void
+
   userId: string
 }) {
   const [step, setStep] = useState(0)
+
   const [mood, setMood] = useState(3)
-  const [water, setWater] = useState(4)
-  const [activity, setActivity] = useState("Caminhada")
-  const [food, setFood] = useState("Razoável")
+
+  const [water, setWater] = useState(0)
+
+  const [activity, setActivity] = useState("")
+
+  const [food, setFood] = useState("")
+
   const [energy, setEnergy] = useState(3)
+
   const [stress, setStress] = useState(2)
-  const [priority, setPriority] = useState("Finalizar apresentação do projeto")
-  const [priorityTime, setPriorityTime] = useState("16:00")
+
+  const [priority, setPriority] = useState("")
+  const [priorityTime, setPriorityTime] = useState("")
+
   const [extraTask, setExtraTask] = useState(false)
+
   const [extraTaskText, setExtraTaskText] = useState("")
+
   const [note, setNote] = useState("")
+
   const titles = ["Físico", "Mental", "Agenda", "Adicionais", "Resumo"]
+
   return (
     <Modal title="Check-in de hoje" onClose={onClose}>
       <div className="check-progress">
@@ -731,8 +875,8 @@ function CheckIn({
             {["Muito baixo", "Baixo", "Neutro", "Bem", "Muito bem"].map(
               (x, i) => (
                 <button
-                  className={mood === i ? "active" : ""}
-                  onClick={() => setMood(i)}
+                  className={mood === i + 1 ? "active" : ""}
+                  onClick={() => setMood(i + 1)}
                   key={x}
                 >
                   <span>{["—", "⌢", "•", "⌣", "◡"][i]}</span>
@@ -828,7 +972,7 @@ function CheckIn({
           <div className="summary-cards">
             <div>
               <span>Humor</span>
-              <strong>Bem</strong>
+              <strong>{["", "Muito baixo", "Baixo", "Neutro", "Bem", "Muito bem"][mood]}</strong>
             </div>
             <div>
               <span>Água</span>
@@ -836,7 +980,7 @@ function CheckIn({
             </div>
             <div>
               <span>Prioridade</span>
-              <strong>Apresentação</strong>
+              <strong>{priority || "Sem prioridade"}</strong>
             </div>
           </div>
         </div>
@@ -851,23 +995,37 @@ function CheckIn({
           onClick={() => {
             if (step < 4) {
               setStep((s) => s + 1)
+
               return
             }
+
             const record = {
               userId,
+
               activity,
+
               food,
+
               water,
+
               mood,
+
               energy,
+
               stress,
+
               priority: priority.trim(),
+
               priorityTime,
+
               extraTask: extraTaskText.trim(),
+
               note: note.trim(),
             }
+
             try {
               validateCheckIn(record)
+
               onComplete(record)
             } catch (error) {
               window.alert(
@@ -889,39 +1047,453 @@ function CheckIn({
   )
 }
 
+function Agenda({
+  tasks,
+
+  setTasks,
+
+  userId,
+}: {
+  tasks: LocalTask[]
+
+  setTasks: (tasks: LocalTask[]) => void
+
+  userId: string
+}) {
+  const [view, setView] = useState<"week" | "day">("week")
+
+  const [selectedDate, setSelectedDate] = useState(
+    () => new Date(),
+  )
+
+  const [showTask, setShowTask] = useState(false)
+
+  const [taskLabel, setTaskLabel] = useState("")
+  const [taskTime, setTaskTime] = useState("09:00")
+
+  const [taskCategory, setTaskCategory] = useState("Pessoal")
+
+  const [taskDate, setTaskDate] = useState(() =>
+    new Date().toISOString().slice(0, 10),
+  )
+
+  const startOfWeek = (date: Date) => {
+    const result = new Date(date)
+
+    const day = result.getDay()
+
+    result.setDate(result.getDate() - (day === 0 ? 6 : day - 1))
+
+    result.setHours(0, 0, 0, 0)
+
+    return result
+  }
+
+  const weekStart = startOfWeek(selectedDate)
+
+  const weekDays = Array.from({ length: 7 }, (_, index) => {
+    const date = new Date(weekStart)
+
+    date.setDate(weekStart.getDate() + index)
+
+    return date
+  })
+
+  const dateKey = (date: Date) => date.toISOString().slice(0, 10)
+
+  const tasksForDate = (date: Date) =>
+    tasks
+
+      .filter(
+        (task) =>
+          (task.dueDate || task.createdAt.slice(0, 10)) === dateKey(date),
+      )
+
+      .sort((a, b) => (a.dueTime || "").localeCompare(b.dueTime || ""))
+
+  const selectedTasks = tasksForDate(selectedDate)
+
+  const moveWeek = (amount: number) => {
+    const next = new Date(selectedDate)
+
+    next.setDate(next.getDate() + amount * 7)
+
+    setSelectedDate(next)
+  }
+
+  const toggleTask = (task: LocalTask) => {
+    const done = !task.done
+
+    setTasks(
+      tasks.map((item) => (item.id === task.id ? { ...item, done } : item)),
+    )
+    void saveTask({ ...task, done })
+
+    void saveEvent({
+      userId,
+
+      type: done ? "task.completed" : "task.uncompleted",
+
+      payload: { taskId: task.id, label: task.label },
+    })
+  }
+
+  const createTask = (event: FormEvent) => {
+    event.preventDefault()
+
+    if (!taskLabel.trim()) return
+
+    const task: LocalTask = {
+      id: crypto.randomUUID(),
+
+      userId,
+
+      label: taskLabel.trim(),
+
+      meta: `${taskCategory} · ${taskTime}`,
+
+      done: false,
+
+      createdAt: new Date().toISOString(),
+
+      dueDate: taskDate,
+
+      dueTime: taskTime,
+
+      category: taskCategory,
+    }
+
+    setTasks([...tasks, task])
+    void saveTask(task)
+
+    void saveEvent({
+      userId,
+
+      type: "task.created",
+
+      payload: {
+        taskId: task.id,
+
+        label: task.label,
+
+        dueDate: task.dueDate,
+
+        dueTime: task.dueTime,
+      },
+    })
+
+    setShowTask(false)
+
+    setTaskLabel("")
+    setTaskDate(dateKey(selectedDate))
+    setTaskTime("09:00")
+    setTaskCategory("Pessoal")
+  }
+
+  return (
+    <>
+      <Header
+        title="Agenda"
+        subtitle="Organize seus compromissos, tarefas e pequenos passos"
+      />
+      <div className="page-content agenda-page">
+        <section className="agenda-toolbar">
+          <div>
+            <span className="eyebrow">PLANEJE SUA SEMANA</span>
+            <h2>
+              {selectedDate.toLocaleDateString("pt-BR", {
+                month: "long",
+
+                year: "numeric",
+              })}
+            </h2>
+          </div>
+          <div className="agenda-actions">
+            <button
+              className="agenda-today"
+              onClick={() => setSelectedDate(new Date())}
+            >
+              Hoje
+            </button>
+            <button aria-label="Semana anterior" onClick={() => moveWeek(-1)}>
+              <Icon name="arrow" size={17} />
+            </button>
+            <button aria-label="Próxima semana" onClick={() => moveWeek(1)}>
+              <Icon name="arrow" size={17} />
+            </button>
+            <Button onClick={() => setShowTask(true)}>
+              <Icon name="plus" /> Nova tarefa
+            </Button>
+          </div>
+        </section>
+        <section className="agenda-summary">
+          <div>
+            <strong>{tasks.filter((task) => !task.done).length}</strong>
+            <span>tarefas pendentes</span>
+          </div>
+          <div>
+            <strong>{tasks.filter((task) => task.done).length}</strong>
+            <span>concluídas</span>
+          </div>
+          <div>
+            <strong>{tasksForDate(new Date()).length}</strong>
+            <span>para hoje</span>
+          </div>
+        </section>
+        <div className="agenda-switcher" role="tablist">
+          <button
+            className={view === "week" ? "active" : ""}
+            onClick={() => setView("week")}
+          >
+            Semana
+          </button>
+          <button
+            className={view === "day" ? "active" : ""}
+            onClick={() => setView("day")}
+          >
+            Dia
+          </button>
+        </div>
+        {view === "week" ? (
+          <section className="agenda-week">
+            {weekDays.map((date) => {
+              const dayTasks = tasksForDate(date)
+
+              const selected = dateKey(date) === dateKey(selectedDate)
+
+              return (
+                <button
+                  className={`agenda-day ${selected ? "selected" : ""}`}
+                  key={dateKey(date)}
+                  onClick={() => {
+                    setSelectedDate(date)
+
+                    setView("day")
+                  }}
+                >
+                  <span>
+                    {date
+
+                      .toLocaleDateString("pt-BR", {
+                        weekday: "short",
+                      })
+
+                      .replace(".", "")}
+                  </span>
+                  <strong>{date.getDate()}</strong>
+                  <div>
+                    {dayTasks.slice(0, 3).map((task) => (
+                      <i className={task.done ? "done" : ""} key={task.id}>
+                        {task.dueTime || "dia"} · {task.label}
+                      </i>
+                    ))}
+                    {dayTasks.length > 3 && (
+                      <small>+{dayTasks.length - 3} tarefas</small>
+                    )}
+                  </div>
+                  <span
+                    className="agenda-day-add"
+                    onClick={(event) => {
+                      event.stopPropagation()
+                      setSelectedDate(date)
+                      setTaskDate(dateKey(date))
+                      setShowTask(true)
+                    }}
+                  >
+                    + adicionar
+                  </span>
+                </button>
+              )
+            })}
+          </section>
+        ) : (
+          <section className="agenda-day-detail">
+            <div className="agenda-day-heading">
+              <div>
+                <span className="eyebrow">
+                  {selectedDate.toLocaleDateString("pt-BR", {
+                    weekday: "long",
+                  })}
+                </span>
+                <h2>
+                  {selectedDate.toLocaleDateString("pt-BR", {
+                    day: "numeric",
+
+                    month: "long",
+                  })}
+                </h2>
+              </div>
+              <button onClick={() => setView("week")}>Voltar à semana</button>
+            </div>
+            {selectedTasks.length === 0 ? (
+              <div className="agenda-empty">
+                <Icon name="calendar" size={28} />
+                <h3>Nada agendado por aqui</h3>
+                <p>
+                  Use este espaço para transformar uma intenção em um próximo
+                  passo.
+                </p>
+                <Button
+                  onClick={() => {
+                    setTaskDate(dateKey(selectedDate))
+
+                    setShowTask(true)
+                  }}
+                >
+                  Adicionar tarefa
+                </Button>
+              </div>
+            ) : (
+              <div className="agenda-task-list">
+                {selectedTasks.map((task) => (
+                  <button
+                    className={`agenda-task ${task.done ? "done" : ""}`}
+                    key={task.id}
+                    onClick={() => toggleTask(task)}
+                  >
+                    <span className="agenda-task-check">
+                      {task.done && <Icon name="check" size={14} />}
+                    </span>
+                    <span className="agenda-task-time">
+                      {task.dueTime || "Dia todo"}
+                    </span>
+                    <span className="agenda-task-copy">
+                      <strong>{task.label}</strong>
+                      <small>{task.category || task.meta}</small>
+                    </span>
+                    <Icon name="arrow" size={16} />
+                  </button>
+                ))}
+              </div>
+            )}
+          </section>
+        )}
+      </div>
+      {showTask && (
+        <Modal title="Nova tarefa na agenda" onClose={() => setShowTask(false)}>
+          <form className="quick-form" onSubmit={createTask}>
+            <label className="input-label">
+              O que você quer fazer?
+              <input
+                autoFocus
+                required
+                value={taskLabel}
+                onChange={(event) => setTaskLabel(event.target.value)}
+                placeholder="Ex.: Caminhar 20 minutos"
+              />
+            </label>
+            <div className="agenda-form-grid">
+              <label className="input-label">
+                Data
+                <input
+                  type="date"
+                  required
+                  value={taskDate}
+                  onChange={(event) => setTaskDate(event.target.value)}
+                />
+              </label>
+              <label className="input-label">
+                Horário
+                <input
+                  type="time"
+                  value={taskTime}
+                  onChange={(event) => setTaskTime(event.target.value)}
+                />
+              </label>
+            </div>
+            <label className="input-label">
+              Categoria
+              <select
+                value={taskCategory}
+                onChange={(event) => setTaskCategory(event.target.value)}
+              >
+                <option>Pessoal</option>
+                <option>Saúde física</option>
+                <option>Nutrição</option>
+                <option>Estudos</option>
+                <option>Trabalho</option>
+              </select>
+            </label>
+            <div className="modal-footer">
+              <Button variant="ghost" onClick={() => setShowTask(false)}>
+                Cancelar
+              </Button>
+              <Button type="submit">Adicionar à agenda</Button>
+            </div>
+          </form>
+        </Modal>
+      )}
+    </>
+  )
+}
+
 function Today({
   name,
+
   tasks,
+
   setTasks,
+
   checkDone,
+
   setCheckDone,
+
   openAgent,
+
   goRecords,
+
   onCheckIn,
+
   userId,
 }: {
   name: string
+
   tasks: LocalTask[]
+
   setTasks: (t: LocalTask[]) => void
+
   checkDone: boolean
+
   setCheckDone: (v: boolean) => void
+
   openAgent: (id: AgentId) => void
+
   goRecords: () => void
+
   onCheckIn: (record: Omit<CheckInRecord, "id" | "createdAt">) => Promise<void>
+
   userId: string
 }) {
   const [showCheck, setShowCheck] = useState(false)
+
   const [showTask, setShowTask] = useState(false)
+
   const [taskLabel, setTaskLabel] = useState("")
-  const [water, setWater] = usePersistentState("cultiva-water", 4)
+  const [taskDate, setTaskDate] = useState(() => new Date().toISOString().slice(0, 10))
+  const [taskTime, setTaskTime] = useState("")
+  const [taskCategory, setTaskCategory] = useState("Pessoal")
+
+  const [water, setWater] = useState(0)
+
+  useEffect(() => {
+    void listEvents(userId)
+
+      .then((events) => setWater(sumWater(events)))
+
+      .catch(() => setWater(0))
+  }, [userId])
+
   const done = tasks.filter((t) => t.done).length
+
   return (
     <>
       <Header
         title={`Olá, ${name}`}
         subtitle={new Intl.DateTimeFormat("pt-BR", {
           weekday: "long",
+
           day: "numeric",
+
           month: "long",
         }).format(new Date())}
       />
@@ -974,13 +1546,24 @@ function Today({
               <button
                 key={t.id}
                 className={`task ${t.done ? "done" : ""}`}
-                onClick={() =>
+                onClick={() => {
+                  const nextDone = !t.done
+
                   setTasks(
                     tasks.map((x) =>
-                      x.id === t.id ? { ...x, done: !x.done } : x,
+                      x.id === t.id ? { ...x, done: nextDone } : x,
                     ),
                   )
-                }
+                  void saveTask({ ...t, done: nextDone })
+
+                  void saveEvent({
+                    userId,
+
+                    type: nextDone ? "task.completed" : "task.uncompleted",
+
+                    payload: { taskId: t.id, label: t.label },
+                  })
+                }}
               >
                 <span className="task-check">
                   {t.done && <Icon name="check" size={15} />}
@@ -1012,7 +1595,19 @@ function Today({
             </div>
             <button
               aria-label="Adicionar um copo de água"
-              onClick={() => setWater(Math.min(8, water + 1))}
+              onClick={() => {
+                if (water >= 8) return
+
+                setWater((value) => Math.min(8, value + 1))
+
+                void saveEvent({
+                  userId,
+
+                  type: "water.logged",
+
+                  payload: { amount: 1, source: "home" },
+                })
+              }}
             >
               +
             </button>
@@ -1067,10 +1662,13 @@ function Today({
           userId={userId}
           onComplete={(record) => {
             void onCheckIn(record)
+
               .then(() => {
                 setCheckDone(true)
+
                 setShowCheck(false)
               })
+
               .catch((error) => {
                 window.alert(
                   error instanceof Error
@@ -1087,19 +1685,52 @@ function Today({
             className="quick-form"
             onSubmit={(event) => {
               event.preventDefault()
+
               if (!taskLabel.trim()) return
-              setTasks([
-                ...tasks,
-                {
-                  id: crypto.randomUUID(),
-                  userId,
-                  label: taskLabel,
-                  meta: "Pessoal · Hoje",
-                  done: false,
-                  createdAt: new Date().toISOString(),
+
+              const task: LocalTask = {
+                id: crypto.randomUUID(),
+
+                userId,
+
+                label: taskLabel.trim(),
+
+                meta: `${taskCategory} · ${taskTime || "Hoje"}`,
+
+                done: false,
+
+                createdAt: new Date().toISOString(),
+
+                dueDate: taskDate,
+
+                dueTime: taskTime || undefined,
+
+                category: taskCategory,
+              }
+
+              setTasks([...tasks, task])
+
+              void saveTask(task)
+
+              void saveEvent({
+                userId,
+
+                type: "task.created",
+
+                payload: {
+                  taskId: task.id,
+                  label: task.label,
+                  dueDate: task.dueDate,
+                  dueTime: task.dueTime,
+                  category: task.category,
                 },
-              ])
+              })
+
               setTaskLabel("")
+              setTaskDate(new Date().toISOString().slice(0, 10))
+              setTaskTime("")
+              setTaskCategory("Pessoal")
+
               setShowTask(false)
             }}
           >
@@ -1111,6 +1742,26 @@ function Today({
                 onChange={(event) => setTaskLabel(event.target.value)}
                 placeholder="Ex.: Separar materiais de estudo"
               />
+            </label>
+            <div className="agenda-form-grid">
+              <label className="input-label">
+                Data
+                <input type="date" required value={taskDate} onChange={(event) => setTaskDate(event.target.value)} />
+              </label>
+              <label className="input-label">
+                Horário
+                <input type="time" value={taskTime} onChange={(event) => setTaskTime(event.target.value)} />
+              </label>
+            </div>
+            <label className="input-label">
+              Categoria
+              <select value={taskCategory} onChange={(event) => setTaskCategory(event.target.value)}>
+                <option>Pessoal</option>
+                <option>Saúde física</option>
+                <option>Nutrição</option>
+                <option>Estudos</option>
+                <option>Trabalho</option>
+              </select>
             </label>
             <label className="input-label">
               Quando?
@@ -1135,12 +1786,17 @@ function Today({
 
 type AgentMessage = {
   from: "agent" | "user"
+
   text: string
 }
+
 type AgentNote = {
   id: string
+
   title: string
+
   body: string
+
   date: string
 }
 
@@ -1150,127 +1806,208 @@ function AgentsPage({
   userName,
   checkIn,
   userId,
+  startInWorkspace,
 }: {
   selected: AgentId
+
   setSelected: (id: AgentId) => void
+
   userName: string
+
   checkIn?: CheckInRecord
+
   userId: string
+
+  startInWorkspace: boolean
 }) {
   const [tab, setTab] = usePersistentState<AgentTab>(
     "cultiva-agent-tab",
+
     "chat",
   )
+  const [mobileAgentOpen, setMobileAgentOpen] = useState(startInWorkspace)
+  const [showAgentMenu, setShowAgentMenu] = useState(false)
+
   const [message, setMessage] = useState("")
+
   const [isSending, setIsSending] = useState(false)
+
   const [chatError, setChatError] = useState("")
+
   const [messagesByAgent, setMessagesByAgent] =
     useState<Record<AgentId, AgentMessage[]>>({
       nutrition: [],
+
       physical: [],
+
       mental: [],
+
       study: [],
     })
+
   const [notesByAgent, setNotesByAgent] =
     useState<Record<AgentId, AgentNote[]>>({
       nutrition: [],
+
       physical: [],
+
       mental: [],
+
       study: [],
     })
+
   const messages = messagesByAgent[selected]
+
   const notes = notesByAgent[selected]
+
   useEffect(() => {
     if (!userId) return
+
     void Promise.all([
       listAgentMessages(userId, selected),
+
       listAgentNotes(userId, selected),
     ])
+
       .then(([storedMessages, storedNotes]) => {
         setMessagesByAgent((current) => ({
           ...current,
+
           [selected]: storedMessages.map(({ from, text }) => ({ from, text })),
         }))
+
         setNotesByAgent((current) => ({
           ...current,
+
           [selected]: storedNotes.map((note) => ({
             id: note.id,
+
             title: note.title,
+
             body: note.body,
+
             date: new Date(note.createdAt).toLocaleString("pt-BR"),
           })),
         }))
       })
+
       .catch(() => undefined)
   }, [selected, userId])
+
   const [remindersEnabled, setRemindersEnabled] = useState(true)
+
   const [conversationTone, setConversationTone] = useState("Acolhedor e direto")
+
   const [useHistory, setUseHistory] = useState(true)
+
   useEffect(() => {
     if (!userId) return
+
     void getPreferences(userId).then((preferences) => {
       const values = new Map(preferences.map((item) => [item.key, item.value]))
+
       if (typeof values.get("reminders") === "boolean")
         setRemindersEnabled(values.get("reminders") as boolean)
+
       if (typeof values.get("tone") === "string")
         setConversationTone(values.get("tone") as string)
+
       if (typeof values.get("history") === "boolean")
         setUseHistory(values.get("history") as boolean)
     })
   }, [userId])
+
   const setMessages = (
     updater: AgentMessage[] | ((current: AgentMessage[]) => AgentMessage[]),
   ) =>
     setMessagesByAgent((current) => ({
       ...current,
+
       [selected]:
         typeof updater === "function"
           ? updater(current[selected] || [])
           : updater,
     }))
+
   const setNotes = (
     updater: AgentNote[] | ((current: AgentNote[]) => AgentNote[]),
   ) =>
     setNotesByAgent((current) => ({
       ...current,
+
       [selected]:
         typeof updater === "function"
           ? updater(current[selected] || [])
           : updater,
     }))
+
   const [newNote, setNewNote] = useState(false)
+
   const [noteTitle, setNoteTitle] = useState("")
+
   const [noteBody, setNoteBody] = useState("")
+
   const [editingNote, setEditingNote] = useState<string | null>(null)
+
   const [noteSearch, setNoteSearch] = useState("")
+
   const [scanStage, setScanStage] = useState(0)
+
   const [scanFile, setScanFile] = useState<File>()
+
   const [scanTitle, setScanTitle] = useState("")
+
   const [scanDetails, setScanDetails] = useState("")
+
   const scanInputRef = useRef<HTMLInputElement>(null)
+
   const agent = agents[selected]
+
   const send = async (e: FormEvent) => {
     e.preventDefault()
+
     if (!message.trim() || isSending) return
+
     const text = message
+
+    if (detectRiskSignal(text)) {
+      setMessage("")
+      setChatError(
+        "Sinto muito que você esteja passando por isso. Não vou continuar esta conversa automatizada. Procure alguém de confiança agora; em risco imediato, ligue para o SAMU (192) ou para o CVV (188).",
+      )
+      return
+    }
+
     setMessages((m) => [...m, { from: "user", text }])
+
     void saveAgentMessage({ userId, agent: selected, from: "user", text })
+
     setMessage("")
+
     setIsSending(true)
+
     setChatError("")
+
     try {
-      const reply = await askAgent(selected, userName, checkIn, [
+      const reply = await askAgent(selected, checkIn, [
         ...messages.map((item) => ({
           role: item.from === "user" ? "user" as const : "assistant" as const,
+
           content: item.text,
         })),
+
         { role: "user", content: text },
       ])
+
       setMessages((m) => [...m, { from: "agent", text: reply }])
+
       void saveAgentMessage({
         userId,
+
         agent: selected,
+
         from: "agent",
+
         text: reply,
       })
     } catch (error) {
@@ -1281,29 +2018,57 @@ function AgentsPage({
       setIsSending(false)
     }
   }
+
   const tabs: Array<{
     id: AgentTab
+
     label: string
+
     icon: string
   }> = [
     { id: "chat", label: "Conversa", icon: "message" },
+    {
+      id: "toolkit",
+      label:
+        selected === "study"
+          ? "Flashcards"
+          : selected === "physical"
+            ? "Movimento"
+            : selected === "nutrition"
+              ? "Plano alimentar"
+              : "Pausa de cuidado",
+      icon:
+        selected === "study"
+          ? "book"
+          : selected === "physical"
+            ? "activity"
+            : selected === "nutrition"
+              ? "utensils"
+              : "heart",
+    },
     { id: "notes", label: "Anotações", icon: "note" },
     { id: "scanner", label: "Scanner", icon: "scan" },
-    { id: "settings", label: "Configurações", icon: "settings" },
   ]
+
   return (
     <>
       <Header title="Agentes" subtitle="Escolha uma área para cuidar agora" />
-      <div className="agent-layout">
+      <div className={`agent-layout ${mobileAgentOpen ? "mobile-agent-open" : ""}`}>
         <aside className="agent-selector">
+          <div className="agent-picker-intro">
+            <span className="eyebrow">CUIDADO POR PERTO</span>
+            <h2>Com quem você quer conversar?</h2>
+            <p>Escolha um agente para começar uma conversa focada.</p>
+          </div>
           {Object.entries(agents).map(([id, a]) => (
             <button
               key={id}
-              className={selected === id ? "active" : ""}
-              aria-pressed={selected === id}
               onClick={() => {
                 setSelected(id as AgentId)
+
                 setTab("chat")
+                setShowAgentMenu(false)
+                setMobileAgentOpen(true)
               }}
             >
               <span style={{ background: a.soft, color: a.color }}>
@@ -1318,6 +2083,12 @@ function AgentsPage({
           ))}
         </aside>
         <section className="agent-workspace">
+          <button
+            className="agent-back"
+            onClick={() => setMobileAgentOpen(false)}
+          >
+            <Icon name="arrow" size={16} /> Todos os agentes
+          </button>
           <div className="agent-head">
             <div className="agent-title">
               <span style={{ background: agent.soft, color: agent.color }}>
@@ -1332,29 +2103,52 @@ function AgentsPage({
               <i /> Disponível
             </div>
           </div>
-          <div className="tabs" role="tablist">
-            {tabs.map((t) => (
+          <div className="agent-tab-row">
+            <div className="tabs" role="tablist">
+              {tabs.map((t) => (
+                <button
+                  className={tab === t.id ? "active" : ""}
+                  role="tab"
+                  aria-selected={tab === t.id}
+                  onClick={() => {
+                    setTab(t.id)
+                    setShowAgentMenu(false)
+                  }}
+                  key={t.id}
+                >
+                  <Icon name={t.icon} />
+                  {t.label}
+                </button>
+              ))}
+            </div>
+            <div className="agent-more">
               <button
-                className={tab === t.id ? "active" : ""}
-                role="tab"
-                aria-selected={tab === t.id}
-                onClick={() => setTab(t.id)}
-                key={t.id}
+                type="button"
+                aria-label="Mais opções do agente"
+                aria-expanded={showAgentMenu}
+                onClick={() => setShowAgentMenu((open) => !open)}
               >
-                <Icon name={t.icon} />
-                {t.label}
+                <span aria-hidden="true">•••</span>
               </button>
-            ))}
+              {showAgentMenu && (
+                <div className="agent-more-menu">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setTab("settings")
+                      setShowAgentMenu(false)
+                    }}
+                  >
+                    <Icon name="settings" size={16} />
+                    Configurações
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
           {tab === "chat" && (
             <div className="chat-panel">
               <div className="messages">
-                <AgentToolkit
-                  agent={selected}
-                  color={agent.color}
-                  soft={agent.soft}
-                  onPrompt={setMessage}
-                />
                 <div className="date-divider">Hoje</div>
                 {messages.map((m, i) => (
                   <div key={i} className={`bubble ${m.from}`}>
@@ -1426,6 +2220,21 @@ function AgentsPage({
               )}
             </div>
           )}
+          {tab === "toolkit" && (
+            <div className="toolkit-panel">
+              <AgentToolkit
+                agent={selected}
+                color={agent.color}
+                soft={agent.soft}
+                onPrompt={(prompt) => {
+                  setMessage(prompt)
+                  setTab("chat")
+                }}
+                userId={userId}
+                onEvent={() => undefined}
+              />
+            </div>
+          )}
           {tab === "notes" && (
             <div className="notes-panel">
               <div className="panel-toolbar">
@@ -1460,8 +2269,11 @@ function AgentsPage({
                       variant="ghost"
                       onClick={() => {
                         setNewNote(false)
+
                         setEditingNote(null)
+
                         setNoteTitle("")
+
                         setNoteBody("")
                       }}
                     >
@@ -1470,22 +2282,32 @@ function AgentsPage({
                     <Button
                       onClick={() => {
                         if (!noteTitle.trim() || !noteBody.trim()) return
+
                         if (editingNote) {
                           const updated = {
                             id: editingNote,
+
                             userId,
+
                             agent: selected,
+
                             title: noteTitle.trim(),
+
                             body: noteBody.trim(),
                           }
+
                           void saveAgentNote(updated)
+
                           setNotes(
                             notes.map((note) =>
                               note.id === editingNote
                                 ? {
                                     ...note,
+
                                     title: updated.title,
+
                                     body: updated.body,
+
                                     date: new Date().toLocaleString("pt-BR"),
                                   }
                                 : note,
@@ -1493,27 +2315,42 @@ function AgentsPage({
                           )
                         } else {
                           const id = crypto.randomUUID()
+
                           const created = {
                             id,
+
                             userId,
+
                             agent: selected,
+
                             title: noteTitle.trim(),
+
                             body: noteBody.trim(),
                           }
+
                           void saveAgentNote(created)
+
                           setNotes([
                             {
                               id,
+
                               title: created.title,
+
                               body: created.body,
+
                               date: new Date().toLocaleString("pt-BR"),
                             },
+
                             ...notes,
                           ])
                         }
+
                         setNoteTitle("")
+
                         setNoteBody("")
+
                         setEditingNote(null)
+
                         setNewNote(false)
                       }}
                     >
@@ -1524,11 +2361,15 @@ function AgentsPage({
               )}
               <div className="notes-grid">
                 {notes
+
                   .filter((note) =>
                     `${note.title} ${note.body}`
+
                       .toLowerCase()
+
                       .includes(noteSearch.toLowerCase()),
                   )
+
                   .map((n) => (
                     <article key={n.id}>
                       <div className="note-top">
@@ -1542,8 +2383,11 @@ function AgentsPage({
                             aria-label={`Editar ${n.title}`}
                             onClick={() => {
                               setNoteTitle(n.title)
+
                               setNoteBody(n.body)
+
                               setEditingNote(n.id)
+
                               setNewNote(true)
                             }}
                           >
@@ -1566,6 +2410,16 @@ function AgentsPage({
                       <small>{n.date}</small>
                     </article>
                   ))}
+                {notes.length === 0 && (
+                  <div className="notes-empty">
+                    <span><Icon name="note" size={24} /></span>
+                    <h3>Um espaço só seu</h3>
+                    <p>Guarde ideias, lembretes e pequenas descobertas para voltar quando quiser.</p>
+                    <Button onClick={() => setNewNote(true)}>
+                      <Icon name="plus" /> Criar anotação
+                    </Button>
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -1592,10 +2446,15 @@ function AgentsPage({
                         hidden
                         onChange={(event) => {
                           const file = event.target.files?.[0]
+
                           if (!file) return
+
                           setScanFile(file)
+
                           setScanTitle(file.name.replace(/\.[^.]+$/, ""))
+
                           setScanDetails("")
+
                           setScanStage(1)
                         }}
                       />
@@ -1630,11 +2489,11 @@ function AgentsPage({
                     <span>{scanFile?.name || "arquivo selecionado"}</span>
                   </div>
                   <div>
-                    <span className="eyebrow">LEITURA CONCLUÍDA</span>
+                    <span className="eyebrow">REVISÃO MANUAL</span>
                     <h3>
                       {selected === "nutrition"
-                        ? "Refeição identificada"
-                        : "Conteúdo identificado"}
+                        ? "Revise sua refeição"
+                        : "Revise seu registro"}
                     </h3>
                     <label className="input-label">
                       Título
@@ -1659,20 +2518,27 @@ function AgentsPage({
                         disabled={!scanTitle.trim() || !scanFile}
                         onClick={() => {
                           if (!scanFile) return
+
                           void saveEvent({
                             userId,
+
                             type: "scan.saved",
+
                             payload: {
                               agent: selected,
+
                               fileName: scanFile.name,
+
                               title: scanTitle.trim(),
+
                               details: scanDetails.trim(),
                             },
                           })
+
                           setScanStage(2)
                         }}
                       >
-                        Revisar e salvar
+                        Confirmar e salvar
                       </Button>
                     </div>
                   </div>
@@ -1691,8 +2557,11 @@ function AgentsPage({
                   <Button
                     onClick={() => {
                       setScanFile(undefined)
+
                       setScanTitle("")
+
                       setScanDetails("")
+
                       setScanStage(0)
                     }}
                   >
@@ -1715,9 +2584,12 @@ function AgentsPage({
                   checked={remindersEnabled}
                   onChange={(event) => {
                     setRemindersEnabled(event.target.checked)
+
                     void savePreference(
                       userId,
+
                       "reminders",
+
                       event.target.checked,
                     )
                   }}
@@ -1732,6 +2604,7 @@ function AgentsPage({
                   value={conversationTone}
                   onChange={(event) => {
                     setConversationTone(event.target.value)
+
                     void savePreference(userId, "tone", event.target.value)
                   }}
                 >
@@ -1750,6 +2623,7 @@ function AgentsPage({
                   checked={useHistory}
                   onChange={(event) => {
                     setUseHistory(event.target.checked)
+
                     void savePreference(userId, "history", event.target.checked)
                   }}
                 />
@@ -1762,57 +2636,129 @@ function AgentsPage({
   )
 }
 
-function Records({ checkIn }: { checkIn?: CheckInRecord }) {
+function Records({
+  checkIn,
+
+  userId,
+}: {
+  checkIn?: CheckInRecord
+
+  userId: string
+}) {
   const [filter, setFilter] = useState("Todos")
+
   const [range, setRange] = useState<"7 dias" | "30 dias">("7 dias")
+
   const [advancedFilters, setAdvancedFilters] = useState(false)
+
+  const [events, setEvents] = useState<Awaited<ReturnType<typeof listEvents>>>(
+    [],
+  )
+
+  useEffect(() => {
+    void listEvents(userId)
+
+      .then(setEvents)
+
+      .catch(() => setEvents([]))
+  }, [userId])
+
   const exportRecords = () => {
     const date = checkIn
       ? new Date(checkIn.createdAt).toLocaleDateString("pt-BR")
       : new Date().toLocaleDateString("pt-BR")
-    const rows = checkIn
-      ? [
-          `${date},Check-in,${checkIn.activity} / ${checkIn.food} / ${checkIn.water} copos`,
-          `${date},Agenda,${checkIn.priority} às ${checkIn.priorityTime}`,
-          checkIn.note ? `${date},Nota,${checkIn.note.replace(/,/g, " ")}` : "",
-        ].filter(Boolean)
-      : []
+
+    const rows = [
+      ...(checkIn
+        ? [
+            `${date},Check-in,${checkIn.activity} / ${checkIn.food} / ${checkIn.water} copos`,
+
+            `${date},Agenda,${checkIn.priority} às ${checkIn.priorityTime}`,
+
+            checkIn.note
+              ? `${date},Nota,${checkIn.note.replace(/,/g, " ")}`
+              : "",
+          ]
+        : []),
+
+      ...events.map(
+        (event) =>
+          `${new Date(event.createdAt).toLocaleDateString("pt-BR")},${event.type},${JSON.stringify(event.payload).replace(/,/g, " ")}`,
+      ),
+    ].filter(Boolean)
+
     const blob = new Blob([["data,categoria,registro", ...rows].join("\n")], {
       type: "text/csv;charset=utf-8",
     })
+
     const link = document.createElement("a")
+
     link.href = URL.createObjectURL(blob)
+
     link.download = "cultiva-registros.csv"
+
     link.click()
+
     URL.revokeObjectURL(link.href)
   }
-  const records = checkIn
-    ? [
-        {
-          icon: "water",
-          title: "Check-in concluído",
-          meta: `${new Date(checkIn.createdAt).toLocaleString("pt-BR")} · ${checkIn.activity}`,
-          cat: "Check-ins",
-          color: "#3a83a6",
-        },
-        {
-          icon: "utensils",
-          title: "Alimentação registrada",
-          meta: `${checkIn.food} · ${checkIn.water} copos de água`,
-          cat: "Nutrição",
-          color: "#4f9c76",
-        },
-        {
-          icon: "clock",
-          title: checkIn.priority,
-          meta: `${checkIn.priorityTime} · Agenda`,
-          cat: "Atividades",
-          color: "#3a83a6",
-        },
-      ]
-    : []
-  const shown =
-    filter === "Todos" ? records : records.filter((r) => r.cat === filter)
+
+  const records = [
+    ...(checkIn
+      ? [
+          {
+            icon: "water",
+
+            title: "Check-in concluído",
+
+            createdAt: checkIn.createdAt,
+
+            meta: `${new Date(checkIn.createdAt).toLocaleString("pt-BR")} · ${checkIn.activity}`,
+
+            cat: "Check-ins",
+
+            color: "#3a83a6",
+          },
+
+          {
+            icon: "utensils",
+
+            title: "Alimentação registrada",
+
+            createdAt: checkIn.createdAt,
+
+            meta: `${checkIn.food} · ${checkIn.water} copos de água`,
+
+            cat: "Nutrição",
+
+            color: "#4f9c76",
+          },
+
+          {
+            icon: "clock",
+
+            title: checkIn.priority,
+
+            createdAt: checkIn.createdAt,
+
+            meta: `${checkIn.priorityTime} · Agenda`,
+
+            cat: "Atividades",
+
+            color: "#3a83a6",
+          },
+        ]
+      : []),
+
+    ...events.map(projectEvent),
+  ]
+
+  const rangeStart = Date.now() - (range === "7 dias" ? 7 : 30) * 86400000
+  const shown = records.filter((record) => {
+    const matchesCategory = filter === "Todos" || record.cat === filter
+    const date = new Date(record.createdAt ?? record.meta).getTime()
+    return matchesCategory && (!Number.isNaN(date) ? date >= rangeStart : true)
+  })
+
   return (
     <>
       <Header
@@ -1852,7 +2798,9 @@ function Records({ checkIn }: { checkIn?: CheckInRecord }) {
             <button
               onClick={() => {
                 setFilter("Todos")
+
                 setRange("7 dias")
+
                 setAdvancedFilters(false)
               }}
             >
@@ -1864,7 +2812,18 @@ function Records({ checkIn }: { checkIn?: CheckInRecord }) {
           <article>
             <span>Constância semanal</span>
             <strong>
-              {checkIn ? 1 : 0} <small>de 7 dias</small>
+              {
+                new Set([
+                  ...(checkIn
+                    ? [new Date(checkIn.createdAt).toDateString()]
+                    : []),
+
+                  ...events.map((event) =>
+                    new Date(event.createdAt).toDateString(),
+                  ),
+                ]).size
+              }{" "}
+              <small>dias registrados</small>
             </strong>
             <div className="bars">
               {[45, 70, 55, 85, 62, 20, 10].map((h, i) => (
@@ -1889,12 +2848,17 @@ function Records({ checkIn }: { checkIn?: CheckInRecord }) {
           <article>
             <span>Água na semana</span>
             <strong>
-              {checkIn?.water ?? 0} <small>copos registrados</small>
+              {sumWater(events) + (checkIn?.water ?? 0)}{" "}
+              <small>copos registrados</small>
             </strong>
             <div className="stat-progress">
               <i
                 style={{
-                  width: `${Math.min(100, ((checkIn?.water ?? 0) / 8) * 100)}%`,
+                  width: `${Math.min(
+                    100,
+
+                    ((sumWater(events) + (checkIn?.water ?? 0)) / 8) * 100,
+                  )}%`,
                 }}
               />
             </div>
@@ -1933,21 +2897,67 @@ function Records({ checkIn }: { checkIn?: CheckInRecord }) {
 
 function Profile({
   name,
+
   setName,
+
+  theme,
+
+  setTheme,
+
   onLogout,
+
   onDeleteAccount,
+
   userId,
 }: {
   name: string
+
   setName: (name: string) => void
+
+  theme: ThemeId
+
+  setTheme: (theme: ThemeId) => void
+
   onLogout: () => void
+
   onDeleteAccount: () => Promise<void>
+
   userId: string
 }) {
   const [support, setSupport] = useState(false)
+
   const [panel, setPanel] = useState<string | null>(null)
+
   const [draftName, setDraftName] = useState(name)
+
   const [contactAdded, setContactAdded] = useState(false)
+  const [contactName, setContactName] = useState("")
+  const [contactPhone, setContactPhone] = useState("")
+  const [notificationsEnabled, setNotificationsEnabled] = useState(false)
+  const [studyRemindersEnabled, setStudyRemindersEnabled] = useState(false)
+  const [consents, setConsents] = useState({
+    healthData: false,
+    ai: false,
+    photos: false,
+    audio: false,
+  })
+
+  useEffect(() => {
+    void getPreferences(userId).then((preferences) => {
+      const values = new Map(preferences.map((item) => [item.key, item.value]))
+      if (typeof values.get("notifications") === "boolean")
+        setNotificationsEnabled(values.get("notifications") as boolean)
+      if (typeof values.get("studyReminders") === "boolean")
+        setStudyRemindersEnabled(values.get("studyReminders") as boolean)
+      setConsents({
+        healthData: values.get("consent.healthData") === true,
+        ai: values.get("consent.ai") === true,
+        photos: values.get("consent.photos") === true,
+        audio: values.get("consent.audio") === true,
+      })
+    })
+  }, [userId])
+
   return (
     <>
       <Header title="Perfil" subtitle="Suas preferências e privacidade" />
@@ -1967,11 +2977,17 @@ function Profile({
             <h3>Preferências</h3>
             {[
               ["bell", "Notificações", "Lembretes e horários"],
+
               [
                 "spark",
+
                 "Configurações dos agentes",
+
                 "Tom, histórico e objetivos",
               ],
+
+              ["spark", "Aparência", "Escolha a identidade do Cultiva"],
+
               ["shield", "Privacidade e dados", "Consentimentos e exportação"],
             ].map((x) => (
               <button key={x[1]} onClick={() => setPanel(x[1])}>
@@ -2004,23 +3020,33 @@ function Profile({
             </p>
           </section>
         </div>
-        <button className="logout" onClick={onLogout}>
-          Sair da conta
-        </button>
-        <button
-          className="logout"
-          onClick={() => {
-            if (
-              window.confirm(
-                "Excluir permanentemente todos os seus dados deste dispositivo?",
-              )
-            ) {
-              void onDeleteAccount()
-            }
-          }}
-        >
-          Excluir todos os meus dados
-        </button>
+        <div className="account-actions">
+          <button className="account-action account-action-logout" onClick={onLogout}>
+            <Icon name="logout" size={16} />
+            <span>
+              <strong>Sair da conta</strong>
+              <small>Encerrar a sessão neste dispositivo</small>
+            </span>
+          </button>
+          <button
+            className="account-action account-action-delete"
+            onClick={() => {
+              if (
+                window.confirm(
+                  "Excluir permanentemente todos os seus dados deste dispositivo?",
+                )
+              ) {
+                void onDeleteAccount()
+              }
+            }}
+          >
+            <Icon name="trash" size={16} />
+            <span>
+              <strong>Excluir todos os meus dados</strong>
+              <small>Remove a conta, registros e conversas locais</small>
+            </span>
+          </button>
+        </div>
       </div>
       {support && (
         <Modal title="Alertas e apoio" onClose={() => setSupport(false)}>
@@ -2038,32 +3064,37 @@ function Profile({
               </p>
             </div>
             <h3>Contatos de confiança</h3>
-            <div className="contact">
-              <div>AC</div>
-              <p>
-                <strong>Ana Costa</strong>
-                <small>Irmã · (11) 99999-0000</small>
-              </p>
-              <button
-                onClick={() => {
-                  window.location.href = "tel:+5511999990000"
-                }}
-              >
-                Ligar
-              </button>
-            </div>
             {contactAdded && (
               <div className="contact">
-                <div>RL</div>
+                <div>{contactName.slice(0, 2).toUpperCase()}</div>
                 <p>
-                  <strong>Rafael Lima</strong>
-                  <small>Amigo · contato adicionado</small>
+                  <strong>{contactName}</strong>
+                  <small>{contactPhone}</small>
                 </p>
+                <button onClick={() => (window.location.href = `tel:${contactPhone}`)}>
+                  Ligar
+                </button>
               </div>
             )}
-            <Button variant="secondary" onClick={() => setContactAdded(true)}>
-              <Icon name="plus" /> Adicionar contato
-            </Button>
+            {!contactAdded && (
+              <>
+                <label className="input-label">
+                  Nome do contato
+                  <input value={contactName} onChange={(event) => setContactName(event.target.value)} />
+                </label>
+                <label className="input-label">
+                  Telefone
+                  <input type="tel" value={contactPhone} onChange={(event) => setContactPhone(event.target.value)} />
+                </label>
+                <Button
+                  variant="secondary"
+                  disabled={!contactName.trim() || !contactPhone.trim()}
+                  onClick={() => setContactAdded(true)}
+                >
+                  <Icon name="plus" /> Adicionar contato
+                </Button>
+              </>
+            )}
             <div className="no-monitor">
               <Icon name="shield" />
               <p>
@@ -2092,8 +3123,19 @@ function Profile({
                 </label>
                 <Button
                   onClick={() => {
-                    if (draftName.trim()) setName(draftName.trim())
-                    setPanel(null)
+                    if (!draftName.trim()) return
+                    void updateAccountName(userId, draftName)
+                      .then((account) => {
+                        setName(account.name)
+                        setPanel(null)
+                      })
+                      .catch((error) =>
+                        window.alert(
+                          error instanceof Error
+                            ? error.message
+                            : "Não foi possível salvar o nome.",
+                        ),
+                      )
                   }}
                 >
                   Salvar alterações
@@ -2107,14 +3149,28 @@ function Profile({
                     <strong>Lembretes diários</strong>
                     <small>Check-in, água e pausas</small>
                   </div>
-                  <input type="checkbox" />
+                  <input
+                    type="checkbox"
+                    checked={notificationsEnabled}
+                    onChange={(event) => {
+                      setNotificationsEnabled(event.target.checked)
+                      void savePreference(userId, "notifications", event.target.checked)
+                    }}
+                  />
                 </div>
                 <div className="setting-row">
                   <div>
                     <strong>Revisões de estudo</strong>
                     <small>Avise quando uma revisão estiver pronta</small>
                   </div>
-                  <input type="checkbox" />
+                  <input
+                    type="checkbox"
+                    checked={studyRemindersEnabled}
+                    onChange={(event) => {
+                      setStudyRemindersEnabled(event.target.checked)
+                      void savePreference(userId, "studyReminders", event.target.checked)
+                    }}
+                  />
                 </div>
               </>
             )}
@@ -2134,18 +3190,68 @@ function Profile({
                 ))}
               </>
             )}
+            {panel === "Aparência" && (
+              <div className="theme-picker">
+                <p className="preference-intro">
+                  Quatro jeitos de sentir o mesmo Cultiva. A escolha fica salva
+                  neste dispositivo e pode ser trocada quando quiser.
+                </p>
+                <div className="theme-grid">
+                  {themes.map((option) => (
+                    <button
+                      className={`theme-option ${theme === option.id ? "active" : ""}`}
+                      data-theme-preview={option.id}
+                      key={option.id}
+                      aria-pressed={theme === option.id}
+                      onClick={() => {
+                        setTheme(option.id)
+                        void savePreference(userId, "theme", option.id)
+                      }}
+                    >
+                      <span className="theme-swatch">
+                        {option.colors.map((color) => (
+                          <i style={{ background: color }} key={color} />
+                        ))}
+                      </span>
+                      <strong>{option.name}</strong>
+                      <small>{option.description}</small>
+                      {theme === option.id && <b>ATIVO</b>}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
             {panel === "Privacidade e dados" && (
               <>
                 <div className="support-alert">
                   <Icon name="shield" />
                   <p>
                     <strong>Seus controles de privacidade</strong>
-                    <span>
-                      Os dados deste protótipo ficam salvos apenas neste
-                      navegador.
-                    </span>
+                    <span>Escolha separadamente quais dados podem ser usados neste dispositivo.</span>
                   </p>
                 </div>
+                {([
+                  ["healthData", "Dados de saúde", "Check-ins e indicadores pessoais."],
+                  ["ai", "Uso de IA", "Enviar o contexto mínimo para respostas dos agentes."],
+                  ["photos", "Fotos", "Permitir processamento de imagens selecionadas."],
+                  ["audio", "Áudio", "Permitir processamento de gravações de voz."],
+                ] as const).map(([key, title, description]) => (
+                  <div className="setting-row" key={key}>
+                    <div>
+                      <strong>{title}</strong>
+                      <small>{description}</small>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={consents[key]}
+                      onChange={(event) => {
+                        const enabled = event.target.checked
+                        setConsents((current) => ({ ...current, [key]: enabled }))
+                        void savePreference(userId, `consent.${key}`, enabled)
+                      }}
+                    />
+                  </div>
+                ))}
                 <Button
                   variant="secondary"
                   onClick={() => void deleteAgentMessages(userId)}
@@ -2163,13 +3269,21 @@ function Profile({
 
 function LoginScreen({
   onLogin,
+
+  onCreateAccount,
 }: {
   onLogin: (account: { id: string; name: string }) => void
+
+  onCreateAccount: () => void
 }) {
   const [email, setEmail] = useState("")
+
   const [password, setPassword] = useState("")
+
   const [error, setError] = useState("")
+
   const [loading, setLoading] = useState(false)
+
   return (
     <main className="onboarding">
       <section className="onboard-content">
@@ -2185,10 +3299,15 @@ function LoginScreen({
             className="form-grid"
             onSubmit={(event) => {
               event.preventDefault()
+
               setLoading(true)
+
               setError("")
+
               void loginAccount(email, password)
+
                 .then((account) => onLogin(account))
+
                 .catch((reason) =>
                   setError(
                     reason instanceof Error
@@ -2196,6 +3315,7 @@ function LoginScreen({
                       : "Não foi possível entrar.",
                   ),
                 )
+
                 .finally(() => setLoading(false))
             }}
           >
@@ -2222,6 +3342,12 @@ function LoginScreen({
               {loading ? "Entrando..." : "Entrar"}
             </Button>
           </form>
+          <p className="auth-switch">
+            Ainda não tem uma conta?{" "}
+            <button type="button" onClick={onCreateAccount}>
+              Criar conta
+            </button>
+          </p>
         </div>
       </section>
     </main>
@@ -2231,55 +3357,89 @@ function LoginScreen({
 export default function App() {
   const [onboarded, setOnboarded] = usePersistentState(
     "cultiva-onboarded",
+
     false,
   )
+
   const [authenticated, setAuthenticated] = usePersistentState(
     "cultiva-authenticated",
+
     false,
   )
+
   const [name, setName] = usePersistentState("cultiva-name", "")
+
   const [page, setPage] = usePersistentState<Page>("cultiva-page", "today")
+
+  const [openAgentDirect, setOpenAgentDirect] = useState(false)
+
   const [selectedAgent, setSelectedAgent] = usePersistentState<AgentId>(
     "cultiva-selected-agent",
+
     "nutrition",
   )
+
+  const [theme, setTheme] = usePersistentState<ThemeId>("cultiva-theme", "punk")
+
   const [tasks, setTasks] = useState<LocalTask[]>([])
+
   const userId = localStorage.getItem("cultiva-user-id") || ""
+
   useEffect(() => {
     if (
       (!userId || userId === "local-user") &&
       (name === "Marina" || name === "Marina Silva")
     ) {
       localStorage.removeItem("cultiva-name")
+
       localStorage.removeItem("cultiva-onboarded")
+
       localStorage.removeItem("cultiva-authenticated")
+
       setName("")
+
       setOnboarded(false)
+
       setAuthenticated(false)
     }
   }, [name, userId])
+
   useEffect(() => {
     if (!userId) return
+
     void listTasks(userId)
+
       .then(setTasks)
+
       .catch(() => setTasks([]))
   }, [userId])
+
   useEffect(() => {
     if (!userId) return
+
     for (const task of tasks) void saveTask(task)
   }, [tasks, userId])
+
   const [checkDone, setCheckDone] = usePersistentState(
     "cultiva-check-done",
+
     false,
   )
+
   const [checkIn, setCheckIn] = useState<CheckInRecord>()
+
   useEffect(() => {
     const userId = localStorage.getItem("cultiva-user-id")
+
     if (!userId) return
+
     void getLatestCheckIn(userId)
+
       .then(setCheckIn)
+
       .catch(() => setCheckIn(undefined))
   }, [onboarded])
+
   const content = useMemo(() => {
     if (page === "today")
       return (
@@ -2291,21 +3451,39 @@ export default function App() {
           setCheckDone={setCheckDone}
           openAgent={(id) => {
             setSelectedAgent(id)
+
+            setOpenAgentDirect(true)
             setPage("agents")
           }}
           goRecords={() => setPage("records")}
           onCheckIn={async (record) => {
             const saved = await saveCheckIn({ ...record, userId })
             setCheckIn(saved)
+            const priorityTask: LocalTask = {
+              id: crypto.randomUUID(),
+              userId,
+              label: saved.priority,
+              meta: `Check-in · ${saved.priorityTime || "Hoje"}`,
+              done: false,
+              createdAt: saved.createdAt,
+              dueDate: saved.createdAt.slice(0, 10),
+              dueTime: saved.priorityTime || undefined,
+              category: "Check-in",
+            }
+            setTasks((current) => [...current, priorityTask])
+            await saveTask(priorityTask)
             await saveEvent({
               userId,
+
               type: "checkin.completed",
+
               payload: { checkInId: saved.id },
             })
           }}
           userId={userId}
         />
       )
+
     if (page === "agents")
       return (
         <AgentsPage
@@ -2314,43 +3492,64 @@ export default function App() {
           userName={name}
           checkIn={checkIn}
           userId={userId}
+          startInWorkspace={openAgentDirect}
         />
       )
-    if (page === "records") return <Records checkIn={checkIn} />
+
+    if (page === "agenda")
+      return <Agenda tasks={tasks} setTasks={setTasks} userId={userId} />
+
+    if (page === "records") return <Records checkIn={checkIn} userId={userId} />
+
     return (
       <Profile
         name={name}
         setName={setName}
+        theme={theme}
+        setTheme={setTheme}
         onLogout={() => setAuthenticated(false)}
         onDeleteAccount={async () => {
           await deleteAllUserData(userId)
+
           await deleteAccount(userId)
+
           for (const key of Object.keys(localStorage)) {
             if (key.startsWith("cultiva-")) localStorage.removeItem(key)
           }
+
           setName("")
+
           setOnboarded(false)
+
           setAuthenticated(false)
         }}
         userId={userId}
       />
     )
-  }, [page, name, tasks, checkDone, selectedAgent, checkIn])
+  }, [page, name, tasks, checkDone, selectedAgent, checkIn, theme])
+
   if (!onboarded)
     return (
       <Onboarding
         onFinish={(n, email, password) => {
           const finish = (userId: string) => {
             localStorage.setItem("cultiva-user-id", userId)
+
             setName(n)
+
             setOnboarded(true)
+
             setAuthenticated(true)
           }
+
           if (!email || !password) {
             return
           }
+
           void registerAccount(n, email, password)
+
             .then((account) => finish(account.id))
+
             .catch((error) => {
               window.alert(
                 error instanceof Error
@@ -2361,20 +3560,45 @@ export default function App() {
         }}
       />
     )
+
   if (!authenticated)
     return (
       <LoginScreen
         onLogin={(account) => {
           localStorage.setItem("cultiva-user-id", account.id)
+
           setName(account.name)
+
           setAuthenticated(true)
+        }}
+        onCreateAccount={() => {
+          setName("")
+
+          setAuthenticated(false)
+
+          setOnboarded(false)
         }}
       />
     )
+
   return (
-    <div className="app-shell">
-      <Navigation page={page} setPage={setPage} name={name} />
-      <main className="main-area">{content}</main>
+    <div className="app-shell" data-theme={theme}>
+      <Navigation
+        page={page}
+        setPage={(nextPage) => {
+          setOpenAgentDirect(false)
+          setPage(nextPage)
+        }}
+        name={name}
+      />
+      <main className="main-area">
+        <div
+          className="page-transition"
+          key={page}
+        >
+          {content}
+        </div>
+      </main>
     </div>
   )
 }

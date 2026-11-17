@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest"
 
-import { validateCheckIn, validateRegistration } from "./validation"
+import {
+  detectRiskSignal,
+  validateCheckIn,
+  validateRegistration,
+} from "./validation"
 
 describe("registration validation", () => {
   it("accepts a valid local account", () => {
@@ -39,6 +43,13 @@ describe("check-in validation", () => {
         priority: "Estudar",
       }),
     ).not.toThrow()
+  })
+
+  describe("risk signal detection", () => {
+    it("detects direct self-harm language without flagging ordinary text", () => {
+      expect(detectRiskSignal("Estou pensando em me machucar")).toBe(true)
+      expect(detectRiskSignal("Hoje quero organizar meus estudos")).toBe(false)
+    })
   })
 
   it("rejects invalid ranges and missing priority", () => {

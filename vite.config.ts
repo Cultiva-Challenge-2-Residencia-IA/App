@@ -78,7 +78,6 @@ function localAgentApi(apiKey: string | undefined): Plugin {
     try {
       const input = JSON.parse(body) as {
         agent?: string
-        userName?: string
         instruction?: string
         sharedContext?: Record<string, unknown> | null
         history?: Array<{
@@ -97,7 +96,6 @@ function localAgentApi(apiKey: string | undefined): Plugin {
         "Você faz parte do CULTIVA, uma equipe de agentes. Use o contexto compartilhado apenas como apoio, não revele dados desnecessários e não invente fatos.",
         "Responda em português brasileiro, com linguagem acolhedora, objetiva e prática. Faça no máximo uma pergunta por vez.",
         "Se a questão pertencer melhor a outro agente, explique isso e recomende Nutrição, Saúde física, Saúde mental ou Estudos.",
-        `Nome da pessoa: ${input.userName || "pessoa usuária"}.`,
         `Check-in compartilhado: ${JSON.stringify(input.sharedContext || "ainda não preenchido")}`,
       ].join("\n")
       const groqResponse = await fetch(

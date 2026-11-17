@@ -42,3 +42,13 @@ export function validateCheckIn(input: {
   if (!input.priority.trim())
     throw new Error("Informe a principal tarefa do dia.")
 }
+
+const riskSignals = [
+  /\b(suic[ií]d|me matar|tirar minha vida)\b/i,
+  /\b(auto[- ]?les[aã]o|me cortar|me machucar)\b/i,
+  /\b(n[aã]o quero mais viver|acabar com tudo)\b/i,
+]
+
+export function detectRiskSignal(text: string) {
+  return riskSignals.some((pattern) => pattern.test(text))
+}

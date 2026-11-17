@@ -1,11 +1,15 @@
 import { CSSProperties, useEffect, useState } from "react"
 import type { AgentId } from "./App"
+import { listEvents, saveEvent } from "./lib/localDb"
+import { sumWater } from "./lib/eventProjection"
 
 type Props = {
   agent: AgentId
   color: string
   soft: string
   onPrompt: (prompt: string) => void
+  userId: string
+  onEvent: () => void
 }
 
 const toolContent = {
@@ -31,21 +35,36 @@ const toolContent = {
   },
 }
 
-export function AgentToolkit({ agent, color, soft, onPrompt }: Props) {
-  const [water, setWater] = useState(() =>
-    Number(localStorage.getItem("cultiva-tool-water") || 4),
-  )
-  const [exerciseDone, setExerciseDone] = useState(
-    () => localStorage.getItem("cultiva-exercise-done") === "true",
-  )
+export function AgentToolkit({
+  agent,
+  color,
+  soft,
+  onPrompt,
+  userId,
+  onEvent,
+}: Props) {
+  const [water, setWater] = useState(() => 0)
+  const [exerciseDone, setExerciseDone] = useState(false)
   const [breathing, setBreathing] = useState(false)
   const [seconds, setSeconds] = useState(30)
-  const [privateNote, setPrivateNote] = useState(
-    () => localStorage.getItem("cultiva-pre-session") || "",
-  )
+  const [privateNote, setPrivateNote] = useState("")
   const [card, setCard] = useState(0)
   const [known, setKnown] = useState(0)
   const content = toolContent[agent]
+
+  useEffect(() => {
+    if (!userId) return
+    void listEvents(userId).then((events) => {
+      setWater(sumWater(events))
+      setExerciseDone(
+        events.some(
+          (event) =>
+            event.type === "exercise.completed" &&
+            event.payload.exercise === "mobilidade-coluna",
+        ),
+      )
+    })
+  }, [userId])
 
   useEffect(() => {
     if (!breathing) return
@@ -114,7 +133,11 @@ export function AgentToolkit({ agent, color, soft, onPrompt }: Props) {
                 onClick={() => {
                   const next = Math.min(8, water + 1)
                   setWater(next)
-                  localStorage.setItem("cultiva-tool-water", String(next))
+                  void saveEvent({
+                    userId,
+                    type: "water.logged",
+                    payload: { amount: 1, source: "agent-toolkit" },
+                  }).then(onEvent)
                 }}
               >
                 +
@@ -131,7 +154,11 @@ export function AgentToolkit({ agent, color, soft, onPrompt }: Props) {
             onClick={() => {
               const next = !exerciseDone
               setExerciseDone(next)
-              localStorage.setItem("cultiva-exercise-done", String(next))
+              void saveEvent({
+                userId,
+                type: next ? "exercise.completed" : "exercise.uncompleted",
+                payload: { exercise: "mobilidade-coluna" },
+              }).then(onEvent)
             }}
           >
             <span className="exercise-visual">03:00</span>
@@ -189,7 +216,11 @@ export function AgentToolkit({ agent, color, soft, onPrompt }: Props) {
               value={privateNote}
               onChange={(event) => {
                 setPrivateNote(event.target.value)
-                localStorage.setItem("cultiva-pre-session", event.target.value)
+                void saveEvent({
+                  userId,
+                  type: "private-note.updated",
+                  payload: { note: event.target.value },
+                }).then(onEvent)
               }}
               placeholder="O que você gostaria de levar para sua próxima sessão?"
               rows={2}
@@ -228,13 +259,27 @@ export function AgentToolkit({ agent, color, soft, onPrompt }: Props) {
                 : "Nas membranas dos tilacoides, dentro dos cloroplastos."}
             </p>
             <div>
-              <button onClick={() => setCard((value) => value + 1)}>
+              <button
+                onClick={() => {
+                  setCard((value) => value + 1)
+                  void saveEvent({
+                    userId,
+                    type: "flashcard.reviewed",
+                    payload: { known: false, topic: "fotossíntese" },
+                  }).then(onEvent)
+                }}
+              >
                 Não sei
               </button>
               <button
                 onClick={() => {
                   setKnown((value) => value + 1)
                   setCard((value) => value + 1)
+                  void saveEvent({
+                    userId,
+                    type: "flashcard.reviewed",
+                    payload: { known: true, topic: "fotossíntese" },
+                  }).then(onEvent)
                 }}
               >
                 Já sei
