@@ -1,11 +1,18 @@
-import { useState } from "react"
+import { useContext, useState } from "react"
+import { Redirect } from "expo-router"
 import { client, fail } from "../src/backend"
+import { SessionContext } from "../src/session"
 import { Button, Card, Copy, Field, Page, Status, useAction } from "../src/ui"
 import { validateRegistration } from "../../src/lib/validation"
 
 type Mode = "login" | "register" | "recover" | "verify"
 
-export default function Access() {
+export default function Index() {
+  const session = useContext(SessionContext)
+  return session ? <Redirect href="/(tabs)/today" /> : <Access />
+}
+
+function Access() {
   const [mode, setMode] = useState<Mode>("login")
   const [name, setName] = useState("")
   const [email, setEmail] = useState("")

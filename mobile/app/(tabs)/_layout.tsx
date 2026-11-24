@@ -6,7 +6,6 @@ function Navigation() {
   const colors = usePalette()
   return (
     <Tabs
-      initialRouteName="today"
       screenOptions={{
         headerShown: false,
         tabBarActiveTintColor: colors.lime,

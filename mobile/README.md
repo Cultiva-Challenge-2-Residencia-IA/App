@@ -1,6 +1,6 @@
 # Cultiva para Android e iOS
 
-O app usa Expo SDK 56, Expo Router, TypeScript e Supabase. O cliente envia a chave pública do projeto e a sessão do usuário. O servidor usa a chave privada do Groq para solicitar respostas aos agentes.
+O app usa Expo SDK 58, Expo Router, TypeScript e Supabase. Use Node.js 22.13 ou superior. O cliente envia a chave pública do projeto e a sessão do usuário. O servidor usa a chave privada do Groq para solicitar respostas aos agentes.
 
 ## Configuração
 
@@ -15,7 +15,7 @@ npm install
 npm start
 ```
 
-Abra o projeto no Expo Go compatível com SDK 56 ou numa development build. Execute `npm run android` com um emulador Android configurado. No macOS com Xcode, execute `npm run ios` para o simulador iOS.
+Abra o projeto no Expo Go compatível com SDK 58 ou numa development build. Após atualizar o SDK, encerre a sessão anterior do Metro e inicie com `npm start -- --clear` para gerar um novo QR code. Execute `npm run android` com um emulador Android configurado. No macOS com Xcode, execute `npm run ios` para o simulador iOS.
 
 ## Validação
 

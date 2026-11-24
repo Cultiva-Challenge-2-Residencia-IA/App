@@ -47,9 +47,7 @@ export default function Root() {
   return (
     <SessionContext.Provider value={session}>
       <Stack screenOptions={{ headerShown: false }}>
-        <Stack.Protected guard={!session}>
-          <Stack.Screen name="index" />
-        </Stack.Protected>
+        <Stack.Screen name="index" />
         <Stack.Protected guard={!!session}>
           <Stack.Screen name="(tabs)" />
         </Stack.Protected>
