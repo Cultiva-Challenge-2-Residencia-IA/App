@@ -1,0 +1,19 @@
+{
+  "expo": {
+    "name": "Cultiva",
+    "slug": "cultiva",
+    "scheme": "cultiva",
+    "platforms": ["ios", "android"],
+    "android": { "package": "br.com.cultiva.app" },
+    "ios": { "bundleIdentifier": "br.com.cultiva.app" },
+    "plugins": [
+      "expo-router",
+      "expo-notifications",
+      ["expo-image-picker", {
+        "cameraPermission": "Permita que o Cultiva fotografe os registros que você deseja revisar.",
+        "photosPermission": "Permita que o Cultiva acesse a foto selecionada para revisão.",
+        "microphonePermission": false
+      }]
+    ]
+  }
+}

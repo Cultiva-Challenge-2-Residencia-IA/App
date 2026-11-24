@@ -1,0 +1,7 @@
+project_id = "cultiva"
+
+[functions.agent-chat]
+verify_jwt = false
+
+[functions.scan-image]
+verify_jwt = false

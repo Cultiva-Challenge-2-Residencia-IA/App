@@ -1,5 +1,7 @@
 # Cultiva
 
+O aplicativo React Native para Android e iOS está em [mobile](mobile/README.md). Consulte o [plano de implementação](IMPLEMENTATION_PLAN.md) para acompanhar a migração. As instruções abaixo descrevem o frontend Vite.
+
 Aplicação local-first de rotina e bem-estar, com check-in, agenda, registros e agentes especializados.
 
 ## Rodar localmente
