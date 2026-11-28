@@ -11,6 +11,12 @@ const instructions = {
     "Ajude a estudar, revisar e criar cartões. Não invente fontes. Indique claramente as incertezas.",
 }
 type Agent = keyof typeof instructions
+const checkInFields: Record<Agent, string> = {
+  nutrition: "food,water,water_mode,activity_date",
+  physical: "activity,energy,activity_date",
+  mental: "mood,energy,stress,activity_date",
+  study: "priority,activity_date",
+}
 const respond = (value: object, status = 200) =>
   Response.json(value, { status })
 
@@ -98,7 +104,7 @@ Deno.serve(async (request) => {
       (prefs ?? []).map((row) => [row.key, row.value]),
     )
     let history: { role: string ; content: string }[] = []
-    if (values[agent + "_history"] !== false) {
+    if (values[agent + "_history"] === true) {
       const { data, error } = await db
         .from("messages")
         .select("role,content")
@@ -114,7 +120,7 @@ Deno.serve(async (request) => {
     if (values.share_checkin === true) {
       const { data, error } = await db
         .from("checkins")
-        .select("activity,food,water,mood,energy,stress,priority")
+        .select(checkInFields[agent])
         .order("created_at", { ascending: false })
         .limit(1)
         .maybeSingle()
@@ -132,6 +138,15 @@ Deno.serve(async (request) => {
       values[agent + "_tone"] === "Objetivo"
         ? "Seja objetivo."
         : "Seja acolhedor e direto."
+    const localDay = typeof body.localDay === "string" && /^\d{4}-\d{2}-\d{2}$/.test(body.localDay)
+      ? body.localDay
+      : new Date().toISOString().slice(0, 10)
+    const agenda =
+      " A data local informada pelo aplicativo é " + localDay + ". " +
+      "Se o usuário pedir para agendar ou lembrar uma ação, ou concordar com uma ação concreta com data, ofereça um rascunho de agenda. " +
+      "Se a data não estiver clara, pergunte. Use a data local para interpretar hoje e amanhã, e não invente um horário. " +
+      'Quando houver data, acrescente na última linha, sem bloco de código: [[AGENDA]] {"label":"ação curta","day":"AAAA-MM-DD","time":"HH:MM"}. ' +
+      'Use "" em time quando nenhum horário foi combinado. O usuário precisa revisar e salvar o rascunho. Nunca diga que salvou a tarefa ou ativou a notificação.'
     const response = await fetch(
       "https://api.groq.com/openai/v1/chat/completions",
       {
@@ -149,10 +164,13 @@ Deno.serve(async (request) => {
               role: "system",
               content:
                 "Você é um agente do Cultiva. Responda em português brasileiro. Priorize ajuda humana se houver risco imediato. " +
+                "Não faça diagnósticos, não prescreva tratamento, não altere planos clínicos e não apresente inferências de saúde como certezas. " +
+                "Não incentive restrição alimentar, exercício compulsivo ou condutas prejudiciais. " +
                 instructions[agent] +
                 " " +
                 tone +
-                context,
+                context +
+                agenda,
             },
             ...history.map((turn) => ({
               role: turn.role,

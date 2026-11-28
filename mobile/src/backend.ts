@@ -1,6 +1,7 @@
 import "react-native-url-polyfill/auto"
 import Storage from "expo-sqlite/kv-store"
 import { createClient } from "@supabase/supabase-js"
+export { localDay, stepDay, validDay } from "./local-date"
 
 const url = process.env.EXPO_PUBLIC_SUPABASE_URL
 const key = process.env.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY
@@ -53,6 +54,8 @@ export type CheckIn = {
   activity: string
   food: string
   water: number
+  water_mode?: "total" | "additional"
+  activity_date?: string | null
   mood: number
   energy: number
   stress: number
@@ -89,25 +92,6 @@ export function client() {
 
 export function fail(error: { message: string } | null) {
   if (error) throw new Error(error.message)
-}
-
-export function localDay(date = new Date()) {
-  return [date.getFullYear(), date.getMonth() + 1, date.getDate()]
-    .map((part) => String(part).padStart(2, "0"))
-    .join("-")
-}
-
-export function stepDay(day: string, offset: number) {
-  const date = new Date(day + "T12:00:00")
-  date.setDate(date.getDate() + offset)
-  return localDay(date)
-}
-
-export function validDay(day: string) {
-  return (
-    /^\d{4}-\d{2}-\d{2}$/.test(day) &&
-    localDay(new Date(day + "T12:00:00")) === day
-  )
 }
 
 export function validTime(time: string) {

@@ -1,0 +1,22 @@
+[
+  {
+    "date": "2026-11-24",
+    "scope": "app",
+    "shape": "app screen",
+    "theme": "custom",
+    "genre": "editorial",
+    "idea": "Put the daily check-in first and make the rest of the day scannable.",
+    "axes": ["light", "system-sans", "chromatic-lime"],
+    "hero": null,
+    "nav": "five native tabs",
+    "footer": null,
+    "imagery": "live routine and task data",
+    "photos": [],
+    "entry": "mobile/app/(tabs)/today.tsx",
+    "fingerprint": ["daily date", "dark check-in surface", "tabular hydration total", "task rows"],
+    "sections": ["Check-in", "Hydration", "Tasks"],
+    "signature": "An inline guided check-in followed by the day's actual hydration and tasks.",
+    "waived": [],
+    "prompt": "Instale a skill Hallmark e execute ela. Total liberdade."
+  }
+]

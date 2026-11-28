@@ -5,8 +5,11 @@ import type { Session } from "@supabase/supabase-js"
 import { db } from "../src/backend"
 import { Page, Status } from "../src/ui"
 import { SessionContext } from "../src/session"
+import { MotionPreference } from "../src/motion"
+import { useReducedMotion } from "../src/today-motion"
 
 export default function Root() {
+  const reducedMotion = useReducedMotion()
   const [session, setSession] = useState<Session | null>(null)
   const [ready, setReady] = useState(false)
   const [error, setError] = useState("")
@@ -45,13 +48,15 @@ export default function Root() {
       </Page>
     )
   return (
-    <SessionContext.Provider value={session}>
-      <Stack screenOptions={{ headerShown: false }}>
+    <MotionPreference.Provider value={reducedMotion}>
+      <SessionContext.Provider value={session}>
+      <Stack screenOptions={{ headerShown: false, animation: reducedMotion ? "none" : "fade" }}>
         <Stack.Screen name="index" />
         <Stack.Protected guard={!!session}>
           <Stack.Screen name="(tabs)" />
         </Stack.Protected>
       </Stack>
-    </SessionContext.Provider>
+      </SessionContext.Provider>
+    </MotionPreference.Provider>
   )
 }

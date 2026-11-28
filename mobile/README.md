@@ -19,6 +19,10 @@ Abra o projeto no Expo Go compatível com SDK 58 ou numa development build. Apó
 
 ## Validação
 
+Em **Agentes > Nutrição > Acompanhamento**, o plano ativo e o histórico usam as tabelas de preferências e eventos desta instalação. Para interpretar texto ou PDF, publique `supabase functions deploy nutrition-plan` no projeto que já tem `GROQ_API_KEY` e `GROQ_MODEL`. O PDF precisa conter texto selecionável e ter até 2 MB e 12 páginas. Para documentos digitalizados como imagem, salve um texto revisado no Scanner e use-o como fonte. O preenchimento manual também está disponível.
+
+Para testar a integração dos agentes com a Agenda, publique a versão atual de `agent-chat` com `supabase functions deploy agent-chat`. Peça no chat um lembrete com data e horário. A resposta pode abrir um rascunho com o botão **Revisar lembrete na Agenda**. Revise e salve a tarefa. Marque **Notificar no horário** para agendar a notificação local neste aparelho, se as permissões estiverem disponíveis.
+
 ```powershell
 npm run typecheck
 npm run bundle

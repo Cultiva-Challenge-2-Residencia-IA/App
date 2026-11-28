@@ -1,0 +1,12 @@
+{
+  "scanned": "2026-11-24",
+  "scope": "React Native app",
+  "findings": {
+    "framework": "Expo 58 and Expo Router (mobile/package.json)",
+    "palette": "Four user-selectable palettes with a cream, orange and lime default (mobile/src/ui.tsx)",
+    "typography": "Native system family (mobile/src/ui.tsx)",
+    "structure": "Five bottom tabs and an inline check-in form (mobile/app/(tabs)/_layout.tsx, mobile/src/routine.tsx)"
+  },
+  "preserve": ["Cultiva palette identities", "routes", "forms", "data sources and handlers"],
+  "introduce": ["daily screen hierarchy", "shared surface tokens", "input and keyboard focus styles", "separated task rows"]
+}
